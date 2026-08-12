@@ -155,27 +155,80 @@ color) are preserved verbatim and never modified.
 
 ---
 
-## 6. Fall-off-boundary rule
+## 6. The anchor, and the fall-off-boundary rule
 
-Adapted from Wu & Tsai. A pair is tested by forcing its difference to the **maximum** of its
-range and checking that both values stay inside `[0, MOD)`:
+### DECISION — the pair anchor
+
+A pair is repositioned about an **anchor** `c`, which embedding leaves unchanged:
+
+```python
+def anchor(a, b):
+    m = abs(b - a)
+    return min(a, b) + (m + 1) // 2     # ceil(m / 2) above the lower coordinate
+```
+
+A pair with anchor `c` and difference `m` is, always and exactly:
+
+```
+low  = c - ceil(m / 2)
+high = c + floor(m / 2)
+```
+
+Moving the pair to a new difference moves both coordinates but not `c`, so
+`anchor(a', b') == anchor(a, b)`. The extractor recovers `c` from the stego pair alone.
+
+### The boundary test
+
+A pair is tested by forcing its difference to the **maximum** `u` of its range and checking that
+both coordinates stay inside `[0, MOD)`:
 
 ```python
 def pair_usable(a, b, u):
-    m    = abs(b - a)
-    sign = 1 if b >= a else -1
-    d    = u - m
-    na   = a - sign * (d // 2)
-    nb   = b + sign * ((d + 1) // 2)
-    return 0 <= na < MOD and 0 <= nb < MOD
+    c = anchor(a, b)
+    return 0 <= c - (u + 1) // 2 and c + u // 2 < MOD
 ```
 
 Unusable pairs are **skipped entirely** — left unchanged, consuming zero payload bits.
 
-**Why this is blind-recoverable:** embedding never moves a difference out of its original range,
-so the stego pair lands in the same range and yields the same `pair_usable` verdict. The receiver
-reproduces the skip decisions without the cover file. This property is the whole reason the
-scheme works; it is the #1 source of "extract returns garbage" when broken.
+**Why this is blind-recoverable:** the verdict is a function of `c` and `u` alone. `c` is
+invariant under embedding, and `u` comes from the range, which embedding never leaves (§7). The
+receiver therefore reproduces every skip decision without the cover file. This is not a property
+to be verified after the fact — it holds by construction, which is the point of anchoring.
+
+### AMENDMENT (2026-08-12) — why the rule was changed
+
+The original rule tested the two coordinates directly:
+
+```python
+d  = u - m
+na = a - sign * (d // 2)
+nb = b + sign * ((d + 1) // 2)
+return 0 <= na < MOD and 0 <= nb < MOD
+```
+
+That verdict depends on `a` and `b` themselves, not only on their difference. A pair could
+therefore be usable before embedding and unusable after: the embedder writes bits into it, the
+extractor skips it, and every subsequent bit is shifted. Minimal counterexample at `L = 3`:
+
+```
+cover (995, 996)   m = 1   range [0, 7]   na = 992, nb =  999    usable
+embed bits 000     m_new = 0              ->  stego (996, 996)
+stego (996, 996)   m = 0   range [0, 7]   na = 993, nb = 1000    NOT usable
+```
+
+An exhaustive sweep of all 10^6 pairs against every payload value they can carry found **106,175
+desynchronising combinations out of 98,568,184 (0.11%)**. Measured on the same sweep:
+
+| Formulation | Usable pairs | Desyncs | §9 golden vector |
+|---|---|---|---|
+| Original rule above | 675,439 | 106,175 | passes |
+| §7's truncate-toward-zero variant | 675,439 | 105,415 | passes |
+| Literal Wu & Tsai odd/even split | 675,439 | 7 | **fails** — gives (511, 945) |
+| **Anchor rule** | **675,439** | **0** | passes |
+
+The anchor rule costs no capacity — the usable-pair count is identical — and reproduces §9
+unchanged. It does alter the stego bytes for some pairs, so files produced before this amendment
+are not readable by implementations after it. No such files existed at the time of the change.
 
 ---
 
@@ -206,10 +259,11 @@ function HIDE(cover_lines, message_bits):
         bit_i += take
 
         m_new = l + bval
-        sign  = +1 if b >= a else -1
-        diff  = m_new - m
-        lows[j]     = a - sign * floor(diff / 2)
-        lows[j + 1] = b + sign * ceil(diff / 2)
+        c     = anchor(a, b)                # §6, invariant under embedding
+        lo    = c - ceil(m_new / 2)
+        hi    = c + floor(m_new / 2)
+        # The pair keeps its orientation: whichever coordinate was larger stays larger.
+        lows[j], lows[j + 1] = (lo, hi) if b >= a else (hi, lo)
 
     if bit_i < len(stream):
         WARN("Message too large — only part of it was hidden.")
@@ -224,17 +278,16 @@ warn. Exit code 0 with a warning on stderr.
 **Partial final group:** when fewer than `t` bits remain, right-pad with zeros to `t` bits. The
 length header tells the extractor where the real payload ends, so the padding is harmless.
 
-`floor` / `ceil` here are over a signed value. In Python, `math.floor(diff/2)` on a negative
-`diff` is not the same as `diff // 2` for the ceiling half — use integer arithmetic and test both
-signs:
+**Arithmetic:** `m_new` is never negative, so `ceil` and `floor` here are over a non-negative
+value and need no sign handling at all — `(m_new + 1) // 2` and `m_new // 2`. This is the second
+reason to anchor: the earlier formulation split a *signed* `diff`, where Python's floor division
+and truncation disagree, and the two readings produced different stego files.
 
-```python
-half_floor = diff // 2 if diff >= 0 else -((-diff) // 2)
-half_ceil  = diff - half_floor
-```
+The pair is placed by absolute position rather than by a delta applied to `a` and `b`. That is
+what makes `anchor(a', b') == anchor(a, b)` exact instead of approximate, and it is why the
+boundary test in §6 is reproducible by a receiver holding only the stego file.
 
-Whichever formulation you pick, **hide and extract must agree**, and the worked example in §9
-must pass.
+The worked example in §9 must pass, and the exhaustive property in §12.7 must hold.
 
 ---
 
@@ -277,12 +330,12 @@ Payload bits : 10110010   (= 178)
 Pair         : (a, b) = (567, 890)
 m            = |890 - 567| = 323
 Range        = [256, 511]  ->  t = 8 bits
+c            = min(567, 890) + ceil(323/2) = 567 + 162 = 729
 m_new        = 256 + 178 = 434
-diff         = 434 - 323 = 111
-sign         = +1  (b >= a)
-a'           = 567 - floor(111/2) = 567 - 55 = 512
-b'           = 890 + ceil(111/2)  = 890 + 56 = 946
+a'           = c - ceil(434/2)  = 729 - 217 = 512
+b'           = c + floor(434/2) = 729 + 217 = 946
 Check        : 946 - 512 = 434, still inside [256, 511] and [0, 999]
+Anchor held  : anchor(512, 946) = 512 + ceil(434/2) = 729 = c
 
 At P = 6:
   1.234567 -> 1.234512   (displacement 0.000055)
@@ -339,6 +392,11 @@ An uncaught traceback on any of these is a defect.
 4. `hide` is deterministic given the same inputs (except `-m random`).
 5. No coordinate moves more than `10**(L-P)` units on any axis.
 6. `hide` with an empty payload still produces a valid, loadable mesh.
+7. For every pair `(a, b)` in `[0, MOD)^2` that `pair_usable` accepts, and every value that pair
+   can carry: the embedded pair stays inside `[0, MOD)`, keeps the same range, is still accepted
+   by `pair_usable`, and extracts back to the value embedded. Zero exceptions — this is the
+   property the anchor rule of §6 exists to guarantee, and the one whose failure motivated the
+   amendment.
 
 Assert these in tests, not in prose.
 
