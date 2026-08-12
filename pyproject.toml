@@ -37,7 +37,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 # Lets `pytest -q` work straight from a clone, with no editable install required.
-pythonpath = ["src"]
+# "." puts the analysis harness on the path so tests can import it without
+# installing it as a package.
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 markers = [
     "slow: exhaustive sweeps over the full L=3 pair space (~100M checks)",

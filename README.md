@@ -129,6 +129,24 @@ Measured across the test fixtures at `L = 3`:
 | `suzanne.obj` | 507 | 490 / 760 (64.5%) | 16 | 403 bytes |
 | `car.obj` | 711 | 747 / 1066 (70.1%) | 299 | 630 bytes |
 
+## Analysis
+
+```bash
+pip install -e ".[analysis]"
+python analysis/run_analysis.py
+```
+
+One command regenerates every table and figure into `analysis/out/` — capacity
+against `L`, distortion at 25/80/100% fill, and a chi-square detectability test. Payloads are
+seeded, so runs are reproducible. See [`analysis/README.md`](analysis/README.md).
+
+The headline finding is not flattering, and is reported anyway: chi-square against a uniform
+distribution — the textbook probe — **cannot separate cover from stego**, because natural
+low-order digits are nowhere near uniform to begin with. But embedding pushes them *toward*
+uniform, dropping the statistic on `car.obj` from 1361 to 130 at full fill. An analyst who models
+what untouched meshes look like, rather than testing against uniform, would flag these files
+immediately. The tool defeats the naive detector and loses to the informed one.
+
 ## Limitations
 
 **The mesh needs entropy in its low-order digits.** Organic, sculpted or scanned geometry carries a

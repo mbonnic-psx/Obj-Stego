@@ -97,3 +97,38 @@ jobs:
           objstego --hide -m message.txt -c tests/data/cube.obj -o cube_out.obj
           cmp tests/data/cube.obj cube_out.obj
           echo "zero-capacity handling OK"
+
+  # The Phase 8 harness. Its own measurements are unit-tested, but the exit
+  # criterion is that one command regenerates the whole report, so run it.
+  analysis:
+    name: analysis harness
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install with the analysis extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev]"
+
+      - name: Regenerate the report
+        run: python analysis/run_analysis.py --no-meshes
+
+      - name: Check the report was produced
+        run: |
+          test -s analysis/out/REPORT.md
+          for figure in capacity_vs_l bits_per_pair low_digit_histogram distortion_vs_fill; do
+            test -s "analysis/out/$figure.png" || { echo "missing $figure.png"; exit 1; }
+          done
+          echo "report and figures OK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analysis-report
+          path: analysis/out/
+
