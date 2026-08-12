@@ -1,0 +1,4 @@
+# the third coordinate is absent
+v 1.000000 2.000000 3.000000
+v 4.000000 5.000000
+f 1 2 1

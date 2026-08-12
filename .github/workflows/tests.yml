@@ -1,0 +1,99 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # The fast suite, across the Python range pyproject declares support for.
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest -q
+
+  # The exhaustive L=3 sweep: all 10**6 pairs against every value each can
+  # carry, ~98.5 million checks, about two minutes. It runs on every push
+  # rather than only on main, because it is the test that caught the
+  # blind-recoverability defect behind the SPEC 6 amendment. Two minutes is
+  # cheap next to shipping that bug again.
+  sweep:
+    name: exhaustive pair sweep
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run exhaustive sweep
+        run: pytest -m slow -q
+
+  # Proves the installed console script works, not just the importable package.
+  cli:
+    name: end-to-end CLI
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Usage with no arguments exits non-zero
+        run: |
+          if objstego; then
+            echo "expected a non-zero exit"; exit 1
+          fi
+
+      - name: Hide and extract a payload
+        run: |
+          printf 'CI round trip payload' > message.txt
+          objstego --hide -m message.txt -c tests/data/car.obj -o stego.obj
+          objstego --extract -s stego.obj -o recovered.txt
+          diff message.txt recovered.txt
+          echo "round trip OK"
+
+      - name: Non-vertex lines are byte-identical
+        run: |
+          diff <(grep -v '^v ' tests/data/car.obj) <(grep -v '^v ' stego.obj)
+          echo "passthrough OK"
+
+      - name: A mesh with no usable pairs warns but succeeds
+        run: |
+          objstego --hide -m message.txt -c tests/data/cube.obj -o cube_out.obj
+          cmp tests/data/cube.obj cube_out.obj
+          echo "zero-capacity handling OK"

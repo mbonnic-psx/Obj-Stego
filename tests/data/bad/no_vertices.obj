@@ -1,0 +1,4 @@
+# a mesh with faces but no vertices
+o Empty
+f 1 2 3
+f 2 3 4

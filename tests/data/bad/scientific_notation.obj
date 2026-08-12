@@ -1,0 +1,4 @@
+# legal OBJ, rare in practice (SPEC 3)
+v 1.5e-3 -2.5E2 3.000000
+v 1.0e0 2.0e0 3.0e0
+f 1 2 1

@@ -1,0 +1,3 @@
+# NaN and inf parse as floats but are not decimal numbers
+v nan 2.000000 3.000000
+v inf 2.000000 3.000000
