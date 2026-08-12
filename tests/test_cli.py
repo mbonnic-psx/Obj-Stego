@@ -1,8 +1,8 @@
-"""Phase 0 smoke tests.
+"""CLI smoke tests: usage, help, version, and the no-traceback promise.
 
-These pin the ROADMAP Phase 0 exit criterion: running with no arguments prints
-usage and exits non-zero. They also assert the broader SPEC 11 promise that a
-bad invocation never produces a traceback.
+Detailed argument parsing and validation lives in `test_args.py`. This file
+pins the ROADMAP Phase 0 exit criterion and the SPEC 11 guarantee that no
+invocation, valid or not, ever produces a traceback.
 """
 
 from __future__ import annotations
@@ -41,6 +41,14 @@ def test_help_prints_usage_to_stdout_and_exits_zero(flag, capsys):
     assert captured.err == ""
 
 
+def test_help_wins_over_an_otherwise_invalid_invocation(capsys):
+    code = main(["--hide", "--extract", "--help"])
+    captured = capsys.readouterr()
+
+    assert code == EXIT_OK
+    assert "usage:" in captured.out
+
+
 def test_version_flag(capsys):
     code = main(["--version"])
     captured = capsys.readouterr()
@@ -49,12 +57,14 @@ def test_version_flag(capsys):
     assert __version__ in captured.out
 
 
-def test_usage_text_documents_both_modes(capsys):
+def test_usage_text_documents_both_modes_and_the_precision_knobs(capsys):
     main(["--help"])
     out = capsys.readouterr().out
 
     assert "--hide" in out
     assert "--extract" in out
+    assert "-P" in out
+    assert "-L" in out
 
 
 @pytest.mark.parametrize(
@@ -62,19 +72,24 @@ def test_usage_text_documents_both_modes(capsys):
     [
         ["--hide"],
         ["--extract"],
-        ["--hide", "-m", "secret.txt", "-c", "cover.obj"],
-        ["--extract", "-m", "secret.txt"],  # incompatible combo, SPEC 11
+        ["--hide", "--extract"],
+        ["--hide", "-m", "nope.txt", "-c", "nope.obj"],
+        ["--extract", "-m", "nope.txt"],
+        ["--extract", "-s", "nope.obj"],
         ["--nonsense"],
         ["cover.obj"],
+        ["--hide", "-m", "random", "-c", "nope.obj", "-P", "x"],
+        ["-P", "2", "-L", "9"],
     ],
 )
-def test_unimplemented_invocations_exit_cleanly(argv, capsys):
-    """Phase 0 has no parser yet; the contract is only "no crash, non-zero"."""
+def test_bad_invocations_exit_nonzero_without_a_traceback(argv, capsys):
+    """SPEC 11: an uncaught traceback on any of these is a defect."""
     code = main(argv)
     err = capsys.readouterr().err
 
-    assert code == EXIT_USAGE
+    assert code != EXIT_OK
     assert "Traceback" not in err
+    assert err.strip(), "a failure must explain itself"
 
 
 def test_module_entry_point_exits_nonzero_with_no_args():
