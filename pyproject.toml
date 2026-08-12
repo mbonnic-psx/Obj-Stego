@@ -39,3 +39,9 @@ where = ["src"]
 # Lets `pytest -q` work straight from a clone, with no editable install required.
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+    "slow: exhaustive sweeps over the full L=3 pair space (~100M checks)",
+]
+# The slow sweeps are deselected by default so `pytest -q` stays usable as a
+# pre-commit check. Run them with `pytest -m slow`; CI runs both.
+addopts = "-m 'not slow'"
