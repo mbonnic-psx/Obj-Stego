@@ -59,9 +59,10 @@ def test_missing_path_is_a_clean_nonzero_exit(tmp_path, message, capsys):
 
 
 @pytest.mark.parametrize("name", ["empty.obj", "only_whitespace.obj", "no_vertices.obj"])
-def test_file_with_no_vertices_is_handled(name, message, capsys):
+def test_file_with_no_vertices_is_handled(name, message, tmp_path, capsys):
     """Row 2: not valid OBJ, or no `v` lines."""
-    code = main(["--hide", "-m", str(message), "-c", str(BAD / name)])
+    code = main(["--hide", "-m", str(message), "-c", str(BAD / name),
+                 "-o", str(tmp_path / "out.obj")])
     err = capsys.readouterr().err
 
     assert code == EXIT_ERROR
@@ -69,9 +70,10 @@ def test_file_with_no_vertices_is_handled(name, message, capsys):
     assert "Traceback" not in err
 
 
-def test_binary_garbage_is_handled(message, capsys):
+def test_binary_garbage_is_handled(message, tmp_path, capsys):
     """Row 2, the ugly end of it."""
-    code = main(["--hide", "-m", str(message), "-c", str(BAD / "binary_garbage.obj")])
+    code = main(["--hide", "-m", str(message), "-c", str(BAD / "binary_garbage.obj"),
+                 "-o", str(tmp_path / "out.obj")])
     err = capsys.readouterr().err
 
     assert code == EXIT_ERROR
@@ -90,9 +92,12 @@ def test_binary_garbage_is_handled(message, capsys):
         "comma_decimal.obj",
     ],
 )
-def test_malformed_vertex_lines_are_reported_with_a_line_number(name, message, capsys):
+def test_malformed_vertex_lines_are_reported_with_a_line_number(
+    name, message, tmp_path, capsys
+):
     """Row 2 again: a `v` line that cannot be parsed names the line it is on."""
-    code = main(["--hide", "-m", str(message), "-c", str(BAD / name)])
+    code = main(["--hide", "-m", str(message), "-c", str(BAD / name),
+                 "-o", str(tmp_path / "out.obj")])
     err = capsys.readouterr().err
 
     assert code == EXIT_ERROR
@@ -200,9 +205,16 @@ def test_the_implausible_header_really_does_claim_the_maximum():
 
 
 @pytest.mark.parametrize("path", BAD_FILES, ids=lambda p: p.name)
-def test_no_bad_input_produces_a_traceback_when_hiding(path, message, capsys):
-    """ROADMAP Phase 7 exit criterion, hiding half."""
-    code = main(["--hide", "-m", str(message), "-c", str(path)])
+def test_no_bad_input_produces_a_traceback_when_hiding(path, message, tmp_path, capsys):
+    """ROADMAP Phase 7 exit criterion, hiding half.
+
+    -o is mandatory here. Without it the default output name lands beside the
+    input, which for these fixtures means writing into the committed corpus --
+    and compounding on every run as `x_stego_stego_stego.obj`.
+    """
+    code = main(
+        ["--hide", "-m", str(message), "-c", str(path), "-o", str(tmp_path / "out.obj")]
+    )
     captured = capsys.readouterr()
 
     assert code in (EXIT_OK, EXIT_ERROR)
@@ -230,7 +242,11 @@ def test_bad_input_never_crashes_the_real_process(path, tmp_path):
     env = {"PYTHONPATH": str(SRC), "PATH": "/usr/bin:/bin"}
 
     proc = subprocess.run(
-        [sys.executable, "-m", "objstego", "--hide", "-m", str(message), "-c", str(path)],
+        [
+            sys.executable, "-m", "objstego",
+            "--hide", "-m", str(message), "-c", str(path),
+            "-o", str(tmp_path / "out.obj"),
+        ],
         capture_output=True,
         text=True,
         env=env,
@@ -274,3 +290,15 @@ def test_capacity_never_raises_on_a_parsable_mesh():
         except ObjParseError:
             continue
         assert payload_capacity(source) >= 0
+
+
+def test_the_corpus_directory_stays_clean():
+    """Every file in bad/ is committed on purpose.
+
+    A name containing `_stego_stego` means some test let the CLI derive its
+    output path and wrote beside the input instead of into tmp_path -- which
+    silently grows the committed corpus on every run.
+    """
+    strays = sorted(p.name for p in BAD.iterdir() if "_stego_stego" in p.name)
+
+    assert strays == []

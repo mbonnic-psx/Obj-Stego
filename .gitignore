@@ -29,6 +29,9 @@ analysis/out/
 *_full.obj
 *_payload.bin
 
+# ...except the committed test fixtures, which are stego meshes on purpose.
+!tests/data/bad/*_stego.obj
+
 # Editors
 .vscode/
 .idea/
