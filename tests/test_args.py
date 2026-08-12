@@ -14,6 +14,7 @@ import pytest
 from objstego import DEFAULT_LOW, DEFAULT_PRECISION
 from objstego.cli import (
     EXIT_ERROR,
+    EXIT_OK,
     EXIT_USAGE,
     InputError,
     UsageError,
@@ -306,17 +307,19 @@ def test_input_errors_exit_1_without_dumping_usage(capsys):
     assert "usage:" not in err
 
 
-@pytest.mark.parametrize("mode", ["hide", "extract"])
-def test_valid_invocation_reports_not_implemented(mode, cover, secret, capsys):
-    argv = (
-        ["--hide", "-m", str(secret), "-c", str(cover)]
-        if mode == "hide"
-        else ["--extract", "-s", str(cover)]
-    )
+def test_valid_hide_invocation_succeeds(cover, secret, capsys):
+    code = main(["--hide", "-m", str(secret), "-c", str(cover)])
+    capsys.readouterr()
 
-    code = main(argv)
+    assert code == EXIT_OK
+    assert (cover.parent / "cover_stego.obj").exists()
+
+
+def test_valid_extract_invocation_reports_not_implemented(cover, capsys):
+    """Phase 6 wires this up; until then it must still fail cleanly."""
+    code = main(["--extract", "-s", str(cover)])
     err = capsys.readouterr().err
 
     assert code == EXIT_ERROR
     assert "not implemented" in err
-    assert mode in err
+    assert "Traceback" not in err

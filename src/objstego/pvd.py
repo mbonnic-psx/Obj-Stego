@@ -12,9 +12,10 @@ function here is shared by both directions; nothing is implemented twice.
 
 from __future__ import annotations
 
-from typing import Tuple
+import dataclasses
+from typing import List, Sequence, Tuple
 
-from .bits import Bits, bits_to_int, int_to_bits
+from .bits import Bits, StreamError, bits_to_int, build_stream, int_to_bits
 from .ranges import RangeTable, bit_width
 
 __all__ = [
@@ -25,6 +26,9 @@ __all__ = [
     "embed_bits",
     "extract_bits",
     "pair_capacity",
+    "capacity_bits",
+    "HideResult",
+    "hide",
 ]
 
 
@@ -145,6 +149,138 @@ def embed_bits(a: int, b: int, group: Bits, table: RangeTable) -> Tuple[int, int
 
 
 def extract_bits(a: int, b: int, table: RangeTable) -> Bits:
-    """Recover a pair's bits, MSB first, padded to the pair's width."""
+    """Recover a pair's bits, MSB first, padded to the pair's width.
+
+    Raises :class:`StreamError` if the pair's offset is too large for the bits
+    its range carries. That is reachable only in the top bucket, which is wider
+    than a power of two: at L=3 it spans 512-999, but 8 bits address only the
+    first 256 of those, so a *cover* pair may naturally sit at a difference of
+    768-999 that embedding can never produce (SPEC 2's documented dead zone).
+
+    Such a pair was therefore never written to. A correct extraction stops on
+    the length header before reaching one, so this fires only when the file is
+    not an objstego stego mesh, or is being read with the wrong L.
+    """
     lower, upper = table.find(abs(b - a))
-    return int_to_bits(abs(b - a) - lower, bit_width(lower, upper))
+    width = bit_width(lower, upper)
+    offset = abs(b - a) - lower
+
+    if offset >= (1 << width):
+        raise StreamError(
+            f"pair ({a}, {b}) has difference {abs(b - a)}, which is {offset} "
+            f"above its range floor {lower} and cannot be expressed in the "
+            f"{width} bits that range carries. Embedding never produces this, "
+            "so the file was not written by objstego, or L is wrong."
+        )
+
+    return int_to_bits(offset, width)
+
+
+# ---------------------------------------------------------------------------
+# Whole-mesh embedding (SPEC 7)
+# ---------------------------------------------------------------------------
+
+
+def _pairs(count: int) -> range:
+    """Indices of the first element of each non-overlapping pair (SPEC 5).
+
+    A trailing odd coordinate has no partner and is left untouched. Hide and
+    extract both take their pairing from here so they cannot drift apart.
+    """
+    return range(0, count - 1, 2)
+
+
+def capacity_bits(coordinates: Sequence[int], table: RangeTable) -> int:
+    """Total bits this coordinate stream can carry, header included.
+
+    Counts only usable pairs. This is a measurement, not a permission check:
+    SPEC 7 forbids pre-checking whether a payload fits, so hiding never calls
+    it. Reporting and `-m random` do.
+    """
+    total = 0
+    lows = [value % table.mod for value in coordinates]
+    for index in _pairs(len(lows)):
+        total += pair_capacity(lows[index], lows[index + 1], table)
+    return total
+
+
+@dataclasses.dataclass(frozen=True)
+class HideResult:
+    """The outcome of an embedding pass.
+
+    `embedded_bits` below `stream_bits` means the payload did not fit. Deciding
+    what to say about that belongs to the caller -- this module does not print.
+
+    The pair counters describe the walk, which stops early once the payload is
+    exhausted (SPEC 7). They are not a survey of the whole mesh; use
+    :func:`capacity_bits` for that.
+    """
+
+    coordinates: List[int]
+    embedded_bits: int
+    stream_bits: int
+    pairs_used: int
+    pairs_skipped: int
+
+    @property
+    def complete(self) -> bool:
+        """Did the entire payload fit?"""
+        return self.embedded_bits >= self.stream_bits
+
+
+def hide(
+    coordinates: Sequence[int], payload: bytes, table: RangeTable
+) -> HideResult:
+    """Embed `payload` into a stream of scaled coordinates (SPEC 7).
+
+    `coordinates` are exact integers at precision P; only each one's low `L`
+    digits are touched, so no coordinate moves by as much as ``10**(L-P)`` in
+    real units (SPEC 12.5).
+
+    As much of the payload as fits is embedded and the rest is dropped -- the
+    caller inspects :attr:`HideResult.complete` and warns. Pre-checking the fit
+    is explicitly forbidden by SPEC 7.
+
+    Deterministic: the same inputs always produce the same output.
+    """
+    stream = build_stream(payload)
+
+    # Only the low part is modified; the high part is put back untouched.
+    lows = [value % table.mod for value in coordinates]
+    highs = [value - low for value, low in zip(coordinates, lows)]
+
+    cursor = 0
+    used = 0
+    skipped = 0
+
+    for index in _pairs(len(lows)):
+        a, b = lows[index], lows[index + 1]
+        lower, upper = table.find(abs(b - a))
+
+        # The skip test comes first, and an unusable pair consumes no bits.
+        # The extractor makes the same call on the same pair and reaches the
+        # same verdict, which is how it reproduces the walk blind (SPEC 6).
+        if not pair_usable(a, b, upper, table.mod):
+            skipped += 1
+            continue
+
+        if cursor >= len(stream):
+            break  # payload fully embedded; leave the rest of the mesh alone
+
+        width = bit_width(lower, upper)
+        # The final group may be short. Right-pad it with zeros: the length
+        # header marks where the real payload ends, so the padding is inert.
+        take = min(width, len(stream) - cursor)
+        group = list(stream[cursor : cursor + take]) + [0] * (width - take)
+
+        lows[index], lows[index + 1] = embed_pair(a, b, bits_to_int(group), table)
+        cursor += take
+        used += 1
+
+    return HideResult(
+        coordinates=[high + low for high, low in zip(highs, lows)],
+        embedded_bits=cursor,
+        stream_bits=len(stream),
+        pairs_used=used,
+        pairs_skipped=skipped,
+    )

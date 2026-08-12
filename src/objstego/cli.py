@@ -4,10 +4,9 @@ This module owns invocation, validation, messaging, and exit codes only. It
 contains no algorithm logic -- that lives in the `pvd`/`obj_io`/`bits`/`ranges`
 modules (CLAUDE.md, "Layout").
 
-Phase 1 scope: full argument parsing and validation. Every bad invocation in
-SPEC 11 is rejected here, with a readable message and a clean exit code, so the
-algorithm modules can assume their inputs exist and are readable. The algorithm
-itself is still absent -- a valid invocation parses, then reports that.
+Every bad invocation in SPEC 11 is rejected here, with a readable message and a
+clean exit code, so the algorithm modules can assume their inputs exist and are
+readable. Hiding is wired up as of Phase 5; extraction arrives in Phase 6.
 """
 
 from __future__ import annotations
@@ -20,6 +19,10 @@ from pathlib import Path
 from typing import NoReturn, Optional, Sequence
 
 from . import DEFAULT_LOW, DEFAULT_PRECISION, __version__
+from . import hide as hide_payload
+from . import payload_capacity
+from .bits import HEADER_BITS
+from .obj_io import ObjParseError, read_obj, write_obj
 
 #: Success.
 EXIT_OK = 0
@@ -299,11 +302,72 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"objstego: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
-    # Phase 1 stops here. Parsing and validation are complete; the algorithm is
-    # not. Phase 5 and 6 replace this with the real hide/extract calls.
+    try:
+        if options.mode == "hide":
+            return _run_hide(options)
+        return _run_extract(options)
+    except ObjParseError as exc:
+        print(f"objstego: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except OSError as exc:
+        print(f"objstego: {exc.strerror or exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+
+def _read_cover(options: Options) -> str:
+    """Load the cover mesh and refuse it if it carries nothing (SPEC 11).
+
+    Returns the source text. Joining the parsed lines gives back exactly the
+    bytes that were read, so obj_io keeps sole ownership of the decoding rules.
+    """
+    document = read_obj(options.input_path, options.precision)
+    if document.vertex_count == 0:
+        raise ObjParseError(
+            f"{options.input_path} has no 'v' lines -- there is nowhere to hide "
+            "a payload"
+        )
+    return "".join(document.lines)
+
+
+def _run_hide(options: Options) -> int:
+    cover = _read_cover(options)
+
+    if options.use_random:
+        # SPEC 10: fill the available capacity with random bytes.
+        size = payload_capacity(cover, precision=options.precision, low=options.low)
+        payload = os.urandom(size)
+    else:
+        assert options.message_path is not None  # guaranteed by parse_args
+        payload = options.message_path.read_bytes()
+
+    stego, result = hide_payload(
+        cover, payload, precision=options.precision, low=options.low
+    )
+    write_obj(options.output_path, stego)
+
+    # embedded_bits counts the length header too; the user cares about payload.
+    hidden = max(0, result.embedded_bits - HEADER_BITS) // 8
     print(
-        f"objstego: --{options.mode} is not implemented yet "
-        "-- this build is a Phase 1 skeleton.",
+        f"{options.input_path} -> {options.output_path}: "
+        f"hid {hidden} of {len(payload)} bytes "
+        f"in {result.pairs_used} pairs ({result.pairs_skipped} skipped)"
+    )
+
+    if not result.complete:
+        # SPEC 7: embed what fits, warn, exit 0. Not an error.
+        print(
+            "objstego: warning: message too large -- only part of it was hidden. "
+            f"{len(payload) - hidden} bytes were dropped.",
+            file=sys.stderr,
+        )
+
+    return EXIT_OK
+
+
+def _run_extract(options: Options) -> int:
+    # Phase 6.
+    print(
+        "objstego: --extract is not implemented yet -- this build stops at Phase 5.",
         file=sys.stderr,
     )
     return EXIT_ERROR
