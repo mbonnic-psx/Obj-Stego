@@ -315,11 +315,12 @@ def test_valid_hide_invocation_succeeds(cover, secret, capsys):
     assert (cover.parent / "cover_stego.obj").exists()
 
 
-def test_valid_extract_invocation_reports_not_implemented(cover, capsys):
-    """Phase 6 wires this up; until then it must still fail cleanly."""
+def test_extract_from_a_mesh_holding_no_payload_fails_cleanly(cover, capsys):
+    """The one-vertex fixture yields no bits at all -- a clear message, no junk."""
     code = main(["--extract", "-s", str(cover)])
     err = capsys.readouterr().err
 
     assert code == EXIT_ERROR
-    assert "not implemented" in err
+    assert "no payload recovered" in err
     assert "Traceback" not in err
+    assert not (cover.parent / "cover_payload.bin").exists()

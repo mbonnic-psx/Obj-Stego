@@ -7,9 +7,9 @@ already is. See SPEC.md, which is authoritative.
 
 This package is standard library only, by design.
 
-Public API: :func:`hide` embeds a payload in OBJ source text and
-:func:`payload_capacity` reports how much a mesh can hold. Extraction arrives
-in Phase 6.
+Public API: :func:`hide` embeds a payload in OBJ source text, :func:`extract`
+recovers one from the stego text alone, and :func:`payload_capacity` reports
+how much a mesh can hold.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ __all__ = [
     "DEFAULT_LOW",
     "HideResult",
     "hide",
+    "extract",
     "payload_capacity",
 ]
 
@@ -73,6 +74,26 @@ def hide(
     document = parse_obj(cover, precision)
     result = pvd.hide(document.coordinates(), payload, range_table(low))
     return render_obj(document, result.coordinates), result
+
+
+def extract(
+    stego: str,
+    *,
+    precision: int = DEFAULT_PRECISION,
+    low: int = DEFAULT_LOW,
+) -> bytes:
+    """Recover the payload hidden in the OBJ source `stego`.
+
+    Blind: the cover mesh is never needed. `precision` and `low` must match
+    those used to hide, since they define the carrier and the range table.
+
+    Raises :class:`objstego.bits.StreamError` if `stego` carries no recoverable
+    payload -- because it was never written by this tool, was truncated, or is
+    being read with the wrong parameters.
+    """
+    _check_parameters(precision, low)
+    document = parse_obj(stego, precision)
+    return pvd.extract(document.coordinates(), range_table(low))
 
 
 def payload_capacity(

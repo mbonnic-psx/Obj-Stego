@@ -15,7 +15,16 @@ from __future__ import annotations
 import dataclasses
 from typing import List, Sequence, Tuple
 
-from .bits import Bits, StreamError, bits_to_int, build_stream, int_to_bits
+from .bits import (
+    HEADER_BITS,
+    Bits,
+    StreamError,
+    bits_to_int,
+    build_stream,
+    int_to_bits,
+    parse_stream,
+    unpack_header,
+)
 from .ranges import RangeTable, bit_width
 
 __all__ = [
@@ -29,6 +38,7 @@ __all__ = [
     "capacity_bits",
     "HideResult",
     "hide",
+    "extract",
 ]
 
 
@@ -284,3 +294,39 @@ def hide(
         pairs_used=used,
         pairs_skipped=skipped,
     )
+
+
+def extract(coordinates: Sequence[int], table: RangeTable) -> bytes:
+    """Recover the payload from a stego coordinate stream (SPEC 8).
+
+    Blind: reads the stego mesh only. No cover, no key, no side channel. The
+    walk, the pairing and the skip decisions are reproduced from the stego
+    coordinates alone -- which works because :func:`pair_usable` depends only on
+    quantities embedding preserves (SPEC 6).
+
+    Stops as soon as the length header accounts for every bit collected.
+    Reading further would be wrong as well as wasteful: pairs beyond the payload
+    were never written to, and one may sit in the top bucket's dead zone, which
+    encodes no valid bit group at all.
+
+    Raises :class:`StreamError` if too little was recovered to hold a header, if
+    the header claims more than the mesh yielded, or if a pair cannot be decoded
+    -- rather than returning junk (SPEC 11).
+    """
+    lows = [value % table.mod for value in coordinates]
+
+    bits: Bits = []
+    for index in _pairs(len(lows)):
+        a, b = lows[index], lows[index + 1]
+        _, upper = table.find(abs(b - a))
+
+        # Identical call, identical verdict as the embedder made (SPEC 6).
+        if not pair_usable(a, b, upper, table.mod):
+            continue
+
+        bits.extend(extract_bits(a, b, table))
+
+        if len(bits) >= HEADER_BITS and len(bits) >= HEADER_BITS + unpack_header(bits):
+            break
+
+    return parse_stream(bits)

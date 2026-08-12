@@ -3,9 +3,10 @@
 Steganography for Wavefront OBJ files — variable-capacity payload hiding in low-order vertex
 coordinate digits via 3D-adapted PVD.
 
-> **Status: in development (Phase 0 of 8).** The package skeleton and CLI entry point exist;
-> the hide/extract algorithm does not yet. See [`ROADMAP.md`](ROADMAP.md) for the build plan and
-> [`SPEC.md`](SPEC.md) for the authoritative format definition.
+> **Status: in development (Phase 6 of 8).** Hiding and blind extraction both work end to end.
+> Remaining: error-case hardening and CI (Phase 7), and the capacity/distortion analysis harness
+> (Phase 8). See [`ROADMAP.md`](ROADMAP.md) for the build plan and [`SPEC.md`](SPEC.md) for the
+> authoritative format definition.
 
 ---
 
@@ -52,11 +53,30 @@ required.
 
 ## Limitations
 
-Documented in full in `SPEC.md`. The notable one: the top range bucket spans differences 512–999
-but only 256 of those are addressable with 8 bits, so differences 768–999 are never produced by
-embedding. This is inherited from PVD's power-of-two width requirement and is intentional — the
-range table defines the file format and cannot change without breaking every previously produced
-stego file.
+**The mesh needs entropy in its low-order digits.** Capacity comes from coordinates whose last
+few decimals vary. Organic, sculpted or scanned geometry carries a lot; clean CAD-style or
+axis-aligned geometry carries nothing at all. Blender's default cube has capacity **zero** — every
+coordinate is `±1.000000`, so every pair sits at a difference of 0 and is rejected by the boundary
+test. That is a property of the method, not of the file size: a subdivided cube with 10,000 round
+coordinates would be just as empty. Hiding into such a mesh warns and writes a copy of the cover.
+
+Measured across the test fixtures at `L = 3`:
+
+| mesh | vertices | usable pairs | distinct low digits | capacity |
+|---|---|---|---|---|
+| `cube.obj` | 8 | 0 / 12 (0%) | 1 | **0 bytes** |
+| `suzanne.obj` | 507 | 490 / 760 (64.5%) | 16 | 403 bytes |
+| `car.obj` | 711 | 747 / 1066 (70.1%) | 299 | 630 bytes |
+
+**The top range bucket wastes capacity.** It spans differences 512–999, but only 256 of those are
+addressable with 8 bits, so differences 768–999 are never produced by embedding. Inherited from
+PVD's power-of-two width requirement, and intentional — the range table defines the file format
+and cannot change without breaking every previously produced stego file.
+
+**No encryption.** The payload is unkeyed by design; anyone who knows the method and `L` can read
+it. Pair PVD with encryption if you need confidentiality rather than concealment.
+
+Documented in full in `SPEC.md`.
 
 Encryption, keyed embedding, randomized traversal order, and non-OBJ containers are out of scope
 for v1.

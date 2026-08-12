@@ -19,9 +19,10 @@ from pathlib import Path
 from typing import NoReturn, Optional, Sequence
 
 from . import DEFAULT_LOW, DEFAULT_PRECISION, __version__
+from . import extract as extract_payload
 from . import hide as hide_payload
 from . import payload_capacity
-from .bits import HEADER_BITS
+from .bits import HEADER_BITS, StreamError
 from .obj_io import ObjParseError, read_obj, write_obj
 
 #: Success.
@@ -353,7 +354,17 @@ def _run_hide(options: Options) -> int:
         f"in {result.pairs_used} pairs ({result.pairs_skipped} skipped)"
     )
 
-    if not result.complete:
+    if result.pairs_used == 0 and result.stream_bits > 0:
+        # A mesh whose coordinates all share the same low digits -- an
+        # axis-aligned cube, say -- has no usable pair anywhere. "Message too
+        # large" would be technically true and thoroughly misleading.
+        print(
+            f"objstego: warning: {options.input_path} has no usable vertex pairs. "
+            "Nothing was hidden; the output is a copy of the cover. Meshes with "
+            "round coordinates carry no payload -- see README, Limitations.",
+            file=sys.stderr,
+        )
+    elif not result.complete:
         # SPEC 7: embed what fits, warn, exit 0. Not an error.
         print(
             "objstego: warning: message too large -- only part of it was hidden. "
@@ -365,12 +376,30 @@ def _run_hide(options: Options) -> int:
 
 
 def _run_extract(options: Options) -> int:
-    # Phase 6.
+    document = read_obj(options.input_path, options.precision)
+    if document.vertex_count == 0:
+        raise ObjParseError(
+            f"{options.input_path} has no 'v' lines -- there is nothing to extract"
+        )
+
+    try:
+        payload = extract_payload(
+            "".join(document.lines),
+            precision=options.precision,
+            low=options.low,
+        )
+    except StreamError as exc:
+        # SPEC 11: no junk output. Nothing is written when the read fails.
+        print(f"objstego: no payload recovered from {options.input_path}", file=sys.stderr)
+        print(f"objstego: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    options.output_path.write_bytes(payload)
     print(
-        "objstego: --extract is not implemented yet -- this build stops at Phase 5.",
-        file=sys.stderr,
+        f"{options.input_path} -> {options.output_path}: "
+        f"recovered {len(payload)} bytes"
     )
-    return EXIT_ERROR
+    return EXIT_OK
 
 
 if __name__ == "__main__":  # pragma: no cover

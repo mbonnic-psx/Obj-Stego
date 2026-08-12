@@ -48,3 +48,43 @@ length header before reaching it — which is exactly the behaviour it pins.
 
 `Car.mtl` is referenced by the `mtllib` line but is not included. That is
 harmless: the line passes through untouched like any other non-`v` line.
+
+## `suzanne.obj`
+
+**Source:** Blender's built-in monkey primitive (Add → Mesh → Monkey), exported
+from Blender 4.3.2. Suzanne is a Blender Foundation asset, not original work by
+the repository owner.
+**License:** Blender Foundation; free to use. Not covered by this repository's
+MIT licence — retained here as a test fixture only.
+
+507 vertices, 1521 coordinates (odd, so one is unpaired). Capacity 403 payload
+bytes at L=3, with 490 of 760 pairs usable (64.5%).
+
+Its distinguishing feature is the opposite of the car's: **only 16 distinct
+low-digit values across all 1521 coordinates**, because Suzanne is built on a
+1/64 grid and her coordinates are multiples of `0.015625`. The car has 299.
+
+That makes her the structured counterpart to the car's organic geometry, and
+the more interesting mesh for Phase 8's chi-square detectability work — a full
+random payload should flatten a 16-value distribution far more visibly than a
+299-value one.
+
+## `cube.obj`
+
+**Source:** Blender's default cube, exported from Blender 4.3.2.
+**License:** trivial geometry, eight axis-aligned vertices; no meaningful
+authorship claim by anyone.
+
+**Capacity: 0 bytes. Zero of 12 pairs are usable.** This fixture exists to pin
+that failure, which is a property of the method rather than of the file size.
+
+Every coordinate is `1.000000`, `-1.000000` or `0.000000`, so every low part is
+`000` and every pair is `(0, 0)`. A pair anchored at zero cannot expand
+downward — forcing it to the top of its range needs `0 - 4 = -4`, outside
+`[0, MOD)` — so the boundary test rejects all twelve.
+
+The consequence generalises: **PVD here needs entropy in the low-order digits.**
+Clean CAD-style or axis-aligned geometry carries nothing, however many vertices
+it has. A subdivided cube with 10,000 vertices at round coordinates would still
+have zero capacity. Hiding into such a mesh warns and emits a byte-identical
+copy of the cover.

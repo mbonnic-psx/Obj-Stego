@@ -26,6 +26,8 @@ analysis/out/
 
 # Stego files produced while experimenting -- never commit these by accident
 *_stego.obj
+*_full.obj
+*_payload.bin
 
 # Editors
 .vscode/
