@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "objstego"
+version = "0.1.0"
+description = "Steganography for Wavefront OBJ files via 3D-adapted Pixel-Value Differencing"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Matthew Bonnichsen", email = "matthewbonnichsen@gmail.com" }]
+keywords = ["steganography", "obj", "wavefront", "pvd", "mesh", "3d"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+    "Topic :: Security",
+]
+
+# The core package is standard library only -- see CLAUDE.md. Anything third-party
+# lives in an optional extra so `pip install objstego` never pulls a dependency.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+analysis = ["numpy>=1.21", "matplotlib>=3.5"]
+
+[project.scripts]
+objstego = "objstego.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# Lets `pytest -q` work straight from a clone, with no editable install required.
+pythonpath = ["src"]
+testpaths = ["tests"]

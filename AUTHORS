@@ -1,0 +1,22 @@
+Obj-Stego — authors and acknowledgements
+========================================
+
+Author and copyright holder
+---------------------------
+
+Matthew Bonnichsen <matthewbonnichsen@gmail.com>
+
+
+Design acknowledgements
+-----------------------
+
+The 3D-PVD method implemented here was developed collaboratively as a
+CS 4463 course project (Team 12). Credit for the underlying design is
+shared with:
+
+    Carlos Moya
+    Michael Gonzalez
+
+They are not copyright holders of this implementation, but the algorithm
+described in SPEC.md is joint work and they should be credited wherever
+the method itself is described or published.
