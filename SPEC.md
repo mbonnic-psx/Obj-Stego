@@ -302,7 +302,14 @@ objstego --extract -s <stego.obj>    [-o <message file>]
 ```
 
 - `-m random` fills available capacity with `os.urandom` bytes.
-- If `-o` is omitted, derive a default name (`cover.obj` -> `cover_stego.obj`).
+- If `-o` is omitted, derive a default name:
+  - hiding: `cover.obj` -> `cover_stego.obj`
+  - extracting: `bunny_stego.obj` -> `bunny_stego_payload.bin`
+
+  The payload is arbitrary bytes, so the extraction default takes a deliberately
+  generic extension. Writing the payload to stdout when `-o` is omitted was the
+  considered alternative; it was rejected because it needs a guard against dumping
+  binary into a terminal, and a derived filename keeps both modes symmetric.
 - Optional: `-P` / `-L` to override precision and hiding budget.
 - **Running with no arguments prints usage text** and exits non-zero.
 
