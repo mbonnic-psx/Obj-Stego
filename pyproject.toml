@@ -9,7 +9,7 @@ description = "Steganography for Wavefront OBJ files via 3D-adapted Pixel-Value 
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
-authors = [{ name = "Matthew Bonnichsen", email = "matthewbonnichsen@gmail.com" }]
+authors = [{ name = "Matthew Bonnichsen", email = "mbonnic81@gmail.com" }]
 keywords = ["steganography", "obj", "wavefront", "pvd", "mesh", "3d"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
